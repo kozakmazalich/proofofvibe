@@ -7,7 +7,6 @@ import LightningStrike from "./LightningStrike";
 import SearchBar from "./SearchBar";
 import ErrorState from "./report/ErrorState";
 import ReportCard from "./report/ReportCard";
-import ReportSkeleton from "./report/ReportSkeleton";
 
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -104,13 +103,15 @@ export default function VibeScanner() {
 
         {/* min-height reserves the landing spot so the page can scroll down with the bolt */}
         <div className={`relative ${state.phase !== "idle" ? "min-h-[max(520px,100dvh)]" : ""}`} aria-busy={loading}>
-          {landed && state.phase === "loading" && <ReportSkeleton />}
+          {/* One persistent element for loading AND success → the reveal is never interrupted or replayed */}
+          {landed && (state.phase === "loading" || state.phase === "success") && (
+            <ReportCard key={strikeId} report={state.phase === "success" ? state.report : null} />
+          )}
           {landed && state.phase === "error" && (
             <div className="mx-auto max-w-md">
               <ErrorState message={state.message} onRetry={() => search(state.username, state.wallet)} />
             </div>
           )}
-          {landed && state.phase === "success" && <ReportCard key={state.report.scannedAt} report={state.report} />}
         </div>
       </div>
     </div>

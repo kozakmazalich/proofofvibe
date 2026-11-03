@@ -1,5 +1,6 @@
 import "server-only";
 import { mockXStats } from "./mock-data";
+import { WeirError, fetchWeirXStats } from "./weir-api";
 import type { PostMetrics, VibePost, XStats } from "./types";
 
 /**
@@ -7,9 +8,12 @@ import type { PostMetrics, VibePost, XStats } from "./types";
  *  X (TWITTER) DATA LAYER
  * ============================================================================
  *
- *  Mode selection:
- *    - No `X_BEARER_TOKEN` in .env.local (or `VIBE_DATA_MODE=mock`) → MOCK data.
- *    - `X_BEARER_TOKEN` set                                        → REAL Twitter API v2.
+ *  Source selection (first match wins; override with X_DATA_PROVIDER=weir|x|mock):
+ *    - `VIBE_DATA_MODE=mock`                → MOCK data.
+ *    - `WEIR_API_KEY` set                   → Weir (third-party X data API, free credits) — see weir-api.ts.
+ *    - `X_BEARER_TOKEN` set                 → REAL Twitter API v2 (needs a paid X developer Project).
+ *    - nothing set                          → MOCK data.
+ *  Any failure of a live source falls back to MOCK with a visible note (never breaks the page).
  *
  *  👉 WHERE TO PLUG THE REAL API:
  *     1. Create an app at https://developer.x.com → copy the Bearer Token.
@@ -37,20 +41,58 @@ const X_API = "https://api.x.com/2";
 /** Keywords that count as a "vibe mention". */
 export const VIBE_KEYWORDS = ["@vibevibefun", "@vibevibeeco", "vibevibe", '"vibe/vibe"'] as const;
 
-/** Max pages of 100 posts to pull from search (to respect rate limits). */
-const MAX_PAGES = 5;
+/**
+ * Max pages of 100 posts to pull from search. X bills per post returned, so the default is ONE page
+ * (the 100 newest matching posts). Raise with X_MAX_PAGES=2..5 if you need deeper history and have credits.
+ */
+const MAX_PAGES = Math.min(5, Math.max(1, Number(process.env.X_MAX_PAGES) || 1));
 
 export async function getXStats(username: string): Promise<XStats> {
   const token = process.env.X_BEARER_TOKEN;
+  const weirKey = process.env.WEIR_API_KEY;
   const forceMock = process.env.VIBE_DATA_MODE === "mock";
+  const wanted = process.env.X_DATA_PROVIDER; // optional explicit choice: weir | x | mock
+  const provider = forceMock || wanted === "mock" ? "mock" : wanted === "weir" || (!wanted && weirKey) ? "weir" : token ? "x" : "mock";
 
-  if (!token || forceMock) {
+  if (provider === "mock" || (provider === "weir" && !weirKey) || (provider === "x" && !token)) {
     // Simulated network latency so the "Scanning the vibe..." state is visible.
     await new Promise((r) => setTimeout(r, 1400 + Math.random() * 600));
     return mockXStats(username);
   }
 
-  return fetchLiveXStats(username, token);
+  if (provider === "weir") {
+    try {
+      return await fetchWeirXStats(username, weirKey!);
+    } catch (err) {
+      console.warn("[x-api] Weir failed — falling back to demo data:", err instanceof Error ? err.message : err);
+      await new Promise((r) => setTimeout(r, 800));
+      return {
+        ...mockXStats(username),
+        fallbackReason: err instanceof WeirError ? err.message : "Weir is not responding",
+      };
+    }
+  }
+  // provider === "x" → official API below
+  if (!token) return mockXStats(username);
+
+  try {
+    return await fetchLiveXStats(username, token!);
+  } catch (err) {
+    // The token / plan is the problem, not the user's request → keep the site usable with demo data
+    // and say so, instead of failing every search. (404 "user not found" and 429 still surface as errors.)
+    if (err instanceof XApiError && err.status !== undefined && [401, 402, 403].includes(err.status)) {
+      console.warn(`[x-api] X rejected the token (HTTP ${err.status}) — falling back to demo data.`);
+      await new Promise((r) => setTimeout(r, 800));
+      return {
+        ...mockXStats(username),
+        fallbackReason:
+          err.status === 402
+            ? "X API credits are exhausted"
+            : "X rejected the API token (the app must belong to a Project with API access)",
+      };
+    }
+    throw err;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -123,13 +165,7 @@ async function fetchLiveXStats(username: string, token: string): Promise<XStats>
 
   const query = encodeURIComponent(buildQuery(user.data.username));
 
-  // 2) Total number of matching posts (cheap counts endpoint), in parallel with
-  // 3) the actual posts with public metrics (paginated).
-  const countsPromise = xFetch<XCountsResponse>(
-    `/tweets/counts/${scope}?query=${query}&granularity=day`,
-    token,
-  ).catch(() => null); // counts may not be included in every plan — fall back to fetched length
-
+  // 2) The posts with public metrics (paginated, capped by MAX_PAGES to keep API cost low).
   const tweets: XTweet[] = [];
   let nextToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -145,8 +181,17 @@ async function fetchLiveXStats(username: string, token: string): Promise<XStats>
     if (!nextToken) break;
   }
 
-  const counts = await countsPromise;
-  return toXStats(user.data, tweets, counts?.meta?.total_tweet_count);
+  // 3) The separate counts call costs extra, so it is only made when search was cut off by MAX_PAGES
+  //    (i.e. there are more matching posts than we fetched). Otherwise the fetched length IS the total.
+  let total: number | undefined;
+  if (nextToken) {
+    const counts = await xFetch<XCountsResponse>(
+      `/tweets/counts/${scope}?query=${query}&granularity=day`,
+      token,
+    ).catch(() => null);
+    total = counts?.meta?.total_tweet_count;
+  }
+  return toXStats(user.data, tweets, total);
 }
 
 function toXStats(

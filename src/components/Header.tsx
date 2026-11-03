@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Header() {
   return (
-    <header className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
+    <header className="relative z-20 flex w-full items-center justify-between px-4 py-4 sm:px-6">
       <Link href="/" className="group flex items-center gap-3" aria-label="Vibe Scanner home">
         <span className="relative grid h-10 w-10 place-items-center rounded-xl border border-vibe/40 bg-vibe/10 shadow-[0_0_24px_-4px_rgba(223,249,4,0.6)] transition-shadow group-hover:shadow-[0_0_32px_0_rgba(223,249,4,0.8)]">
           <svg viewBox="0 0 24 24" className="h-5 w-5 fill-vibe" aria-hidden="true">
@@ -25,6 +25,14 @@ export default function Header() {
           className="hidden rounded-full border border-white/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-white/60 transition hover:border-vibe/50 hover:text-vibe sm:inline-flex"
         >
           Battlegrounds ↗
+        </a>
+        <a
+          href="https://testnet.vibevibe.fun/"
+          target="_blank"
+          rel="noreferrer"
+          className="hidden rounded-full border border-white/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-white/60 transition hover:border-vibe/50 hover:text-vibe sm:inline-flex"
+        >
+          Testnet ↗
         </a>
         <a
           href="https://x.com/vibevibefun"

@@ -27,6 +27,8 @@ export interface XStats {
   lastMention: string | null; // ISO 8601
   recentPosts: VibePost[];
   source: DataSource;
+  /** Set when live data was requested but X refused (bad token / no API access) and demo data is shown instead. */
+  fallbackReason?: string;
 }
 
 export interface GameStats {

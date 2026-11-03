@@ -10,9 +10,10 @@
 
   --animate-rise: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-card-in: card-in 0.9s cubic-bezier(0.2, 0.9, 0.2, 1) both;
-  --animate-card-reveal: card-reveal 0.85s cubic-bezier(0.45, 0, 0.25, 1) both;
-  --animate-reveal-edge: reveal-edge 0.85s cubic-bezier(0.45, 0, 0.25, 1) both;
-  --animate-glow-in: glow-in 1.2s ease-out 0.3s both;
+  --animate-card-reveal: card-reveal 1.15s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  --animate-reveal-edge: reveal-edge 1.15s cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-glow-in: glow-in 0.9s ease-out 0.6s both;
+  --animate-card-swap: card-swap 0.45s ease-out both;
   --animate-bolt-in: bolt-in 0.35s ease-out both;
   --animate-impact: impact 1.4s ease-out both;
   --animate-impact-pulse: impact-pulse 0.9s ease-in-out infinite;
@@ -31,17 +32,45 @@
     35% { opacity: 1; filter: brightness(1.6) blur(0); }
     100% { opacity: 1; transform: none; filter: none; }
   }
-  /* Top → bottom wipe: the card is "drawn" downward from where the bolt hits it */
+  /* Top → bottom reveal with a SOFT feathered edge (mask, not a hard clip). The mask lives in the keyframes
+     only, so once the reveal is over the element is completely unmasked (shadows / tilt are not clipped).
+     Mask = 3× element height: opaque to 1.0H, transparent from 1.2H → 0.2H feather.
+     mask-position-y 60% → window starts at 1.2H (fully hidden), 0% → fully visible. */
   @keyframes card-reveal {
-    from { clip-path: inset(0 0 100% 0 round 24px); filter: brightness(1.8); }
-    70% { filter: brightness(1.15); }
-    to { clip-path: inset(0 0 0 0 round 24px); filter: none; }
+    from {
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 33.333%, transparent 40%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 33.333%, transparent 40%, transparent 100%);
+      -webkit-mask-size: 100% 300%;
+      mask-size: 100% 300%;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-position: 0 60%;
+      mask-position: 0 60%;
+      filter: brightness(1.7);
+    }
+    75% { filter: brightness(1.12); }
+    to {
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 33.333%, transparent 40%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 33.333%, transparent 40%, transparent 100%);
+      -webkit-mask-size: 100% 300%;
+      mask-size: 100% 300%;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-position: 0 0%;
+      mask-position: 0 0%;
+      filter: none;
+    }
   }
+  /* The lit line sits at the centre of the feather: -10% → 110% of the card height, same duration + easing. */
   @keyframes reveal-edge {
-    0% { top: 0; opacity: 0; }
-    10% { opacity: 1; }
-    85% { opacity: 1; }
-    100% { top: calc(100% - 2px); opacity: 0; }
+    0% { top: -10%; opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { top: 110%; opacity: 0; }
+  }
+  /* skeleton → real content, no second wipe */
+  @keyframes card-swap {
+    from { opacity: 0.25; filter: brightness(1.5); }
   }
   @keyframes glow-in {
     from { opacity: 0; }
