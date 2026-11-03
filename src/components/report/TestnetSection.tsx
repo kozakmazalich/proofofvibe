@@ -82,20 +82,40 @@ export default function TestnetSection({ testnet, score }: { testnet: TestnetSta
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <StatTile label="Trades" value={testnet.buyCount + testnet.sellCount} accent hint={`${testnet.buyCount} buys · ${testnet.sellCount} sells`} />
             <TextTile label="Volume" value={formatEth(testnet.volumeEth)} hint={`30d: ${formatEth(testnet.volume30dEth)}`} accent />
-            <StatTile label="Tokens traded" value={testnet.tokensTraded} hint={`${testnet.openPositions} open positions`} delay={120} />
+            <StatTile
+              label="Tokens traded"
+              value={testnet.tokensTraded}
+              hint={testnet.openPositions === null ? undefined : `${testnet.openPositions} open positions`}
+              delay={120}
+            />
             <TextTile
               label="Total PnL"
-              value={formatEth(testnet.pnlEth, true)}
-              tone={testnet.pnlEth >= 0 ? "up" : "down"}
-              hint={`realized ${formatEth(testnet.realizedPnlEth, true)}`}
+              value={testnet.pnlEth === null ? "—" : formatEth(testnet.pnlEth, true)}
+              tone={testnet.pnlEth === null ? undefined : testnet.pnlEth >= 0 ? "up" : "down"}
+              hint={
+                testnet.realizedPnlEth === null
+                  ? "indexer is rebuilding accounting"
+                  : `realized ${formatEth(testnet.realizedPnlEth, true)}`
+              }
             />
-            <TextTile label="Equity" value={formatEth(testnet.equityEth)} hint="current holdings value" />
+            <TextTile
+              label="Equity"
+              value={testnet.equityEth === null ? "—" : formatEth(testnet.equityEth)}
+              hint={testnet.equityEth === null ? "not accounted yet" : "current holdings value"}
+            />
             <TextTile
               label="Win rate"
               value={testnet.winRate === null ? "—" : `${Math.round(testnet.winRate * 100)}%`}
               hint="profitable closes"
             />
           </div>
+
+          {!testnet.portfolioAvailable && (
+            <p className="mt-3 rounded-2xl border border-dashed border-white/15 bg-black/35 px-4 py-3 font-mono text-[10px] leading-relaxed text-white/45">
+              The testnet indexer is still accounting this wallet, so PnL, equity, tokens traded and open positions
+              are hidden instead of shown as zero. Trades and volume above are live.
+            </p>
+          )}
 
           {testnet.recentActivity.length > 0 && (
             <ul className="mt-3 divide-y divide-white/5 overflow-hidden rounded-2xl border border-white/10 bg-black/45 backdrop-blur-md">

@@ -101,7 +101,7 @@ export function computeTestnetScore(t: TestnetStats): number | null {
       Math.round(
         logPart(t.buyCount + t.sellCount, 200, 40) +
           logPart(t.volumeEth * 100, 500, 35) + // 5 ETH volume = full
-          logPart(t.tokensTraded, 30, 15) +
+          logPart(t.tokensTraded ?? 0, 30, 15) +
           (t.volume30dEth > 0 ? 10 : 0),
       ),
     ),

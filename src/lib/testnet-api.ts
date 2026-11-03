@@ -35,12 +35,13 @@ const EMPTY: Omit<TestnetStats, "status" | "wallet"> = {
   volumeEth: 0,
   volume30dEth: 0,
   winRate: null,
-  realizedPnlEth: 0,
-  unrealizedPnlEth: 0,
-  pnlEth: 0,
-  equityEth: 0,
-  tokensTraded: 0,
-  openPositions: 0,
+  realizedPnlEth: null,
+  unrealizedPnlEth: null,
+  pnlEth: null,
+  equityEth: null,
+  tokensTraded: null,
+  openPositions: null,
+  portfolioAvailable: false,
   lastActivity: null,
   recentActivity: [],
   asOfBlock: null,
@@ -130,7 +131,10 @@ export async function getTestnetStats(wallet: string | null): Promise<TestnetSta
   const windows = perfRes.value.data?.windows?.items ?? [];
   const all = windows.find((w) => w.window === "ALL");
   const d30 = windows.find((w) => w.window === "30D");
-  const summary = portRes.value.data?.summary ?? {};
+  // The accounting projection can be incomplete for a wallet (freshness PARTIAL): it then returns
+  // summary: null. Zeros would be a lie — remember that the figures are unknown.
+  const summary = portRes.value.data?.summary ?? null;
+  const portfolioAvailable = summary !== null;
   const items = actRes.status === "fulfilled" ? (actRes.value.data?.items ?? []) : [];
 
   const recentActivity: TestnetActivity[] = items.map((a) => {
@@ -160,12 +164,13 @@ export async function getTestnetStats(wallet: string | null): Promise<TestnetSta
     volumeEth: eth(all?.buyVolumeWei) + eth(all?.sellVolumeWei),
     volume30dEth: eth(d30?.buyVolumeWei) + eth(d30?.sellVolumeWei),
     winRate: all && all.scoredCloses > 0 ? all.winningCloses / all.scoredCloses : null,
-    realizedPnlEth: eth(summary.realizedPnlWei),
-    unrealizedPnlEth: eth(summary.unrealizedPnlWei),
-    pnlEth: eth(summary.pnlWei),
-    equityEth: eth(summary.equityWei),
-    tokensTraded: num(summary.tokensTraded),
-    openPositions: num(summary.openPositions),
+    realizedPnlEth: summary ? eth(summary.realizedPnlWei) : null,
+    unrealizedPnlEth: summary ? eth(summary.unrealizedPnlWei) : null,
+    pnlEth: summary ? eth(summary.pnlWei) : null,
+    equityEth: summary ? eth(summary.equityWei) : null,
+    tokensTraded: summary ? num(summary.tokensTraded) : null,
+    openPositions: summary ? num(summary.openPositions) : null,
+    portfolioAvailable,
     lastActivity: recentActivity[0]?.occurredAt ?? null,
     recentActivity,
     asOfBlock: perfRes.value.meta?.freshness?.asOfBlock || portRes.value.meta?.freshness?.asOfBlock || null,
@@ -175,7 +180,7 @@ export async function getTestnetStats(wallet: string | null): Promise<TestnetSta
   if (
     stats.buyCount + stats.sellCount === 0 &&
     recentActivity.length === 0 &&
-    stats.tokensTraded === 0
+    (stats.tokensTraded ?? 0) === 0
   ) {
     stats.status = "empty";
   }

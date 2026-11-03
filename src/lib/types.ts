@@ -68,12 +68,19 @@ export interface TestnetStats {
   volumeEth: number;
   volume30dEth: number;
   winRate: number | null; // 0..1
-  realizedPnlEth: number;
-  unrealizedPnlEth: number;
-  pnlEth: number;
-  equityEth: number;
-  tokensTraded: number;
-  openPositions: number;
+  /**
+   * Portfolio figures come from the indexer's accounting projection. They are null — never 0 — while
+   * that projection reports the wallet as not accounted yet (freshness PARTIAL, e.g.
+   * ACCOUNTING_REPLAY_PENDING), so the UI can hide them instead of claiming the wallet has nothing.
+   */
+  realizedPnlEth: number | null;
+  unrealizedPnlEth: number | null;
+  pnlEth: number | null;
+  equityEth: number | null;
+  tokensTraded: number | null;
+  openPositions: number | null;
+  /** False when the indexer returned no portfolio summary for this wallet yet. */
+  portfolioAvailable: boolean;
   lastActivity: string | null;
   recentActivity: TestnetActivity[];
   /** Block the indexer data is current to. */
