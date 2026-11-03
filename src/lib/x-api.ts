@@ -1,6 +1,6 @@
 import "server-only";
 import { mockXStats } from "./mock-data";
-import { WeirError, fetchWeirXStats } from "./weir-api";
+import { WeirError, fetchWeirXStats, getWeirApiKeys } from "./weir-api";
 import type { PostMetrics, VibePost, XStats } from "./types";
 
 /**
@@ -8,12 +8,15 @@ import type { PostMetrics, VibePost, XStats } from "./types";
  *  X (TWITTER) DATA LAYER
  * ============================================================================
  *
- *  Source selection (first match wins; override with X_DATA_PROVIDER=weir|x|mock):
+ *  Source order (override with X_DATA_PROVIDER=weir|x|mock):
  *    - `VIBE_DATA_MODE=mock`                → MOCK data.
- *    - `WEIR_API_KEY` set                   → Weir (third-party X data API, free credits) — see weir-api.ts.
- *    - `X_BEARER_TOKEN` set                 → REAL Twitter API v2 (needs a paid X developer Project).
+ *    - Weir keys (WEIR_API_KEY, WEIR_API_KEYS) → Weir, key by key — see weir-api.ts.
+ *    - `X_BEARER_TOKEN`                     → REAL Twitter API v2 (needs a paid X developer Project).
  *    - nothing set                          → MOCK data.
- *  Any failure of a live source falls back to MOCK with a visible note (never breaks the page).
+ *  Automatic failover: if every Weir key is out of credits / rejected / rate-limited, the SAME scan is
+ *  retried against the official X API, so a spent free Weir account never takes the site down while
+ *  X_BEARER_TOKEN exists. If the whole chain fails the scan reports an honest error — it never shows
+ *  invented numbers.
  *
  *  👉 WHERE TO PLUG THE REAL API:
  *     1. Create an app at https://developer.x.com → copy the Bearer Token.
@@ -48,45 +51,64 @@ export const VIBE_KEYWORDS = ["@vibevibefun", "@vibevibeeco", "vibevibe", '"vibe
 const MAX_PAGES = Math.min(5, Math.max(1, Number(process.env.X_MAX_PAGES) || 1));
 
 export async function getXStats(username: string): Promise<XStats> {
+  const weirKeys = getWeirApiKeys();
   const token = process.env.X_BEARER_TOKEN;
-  const weirKey = process.env.WEIR_API_KEY;
   const forceMock = process.env.VIBE_DATA_MODE === "mock";
   const wanted = process.env.X_DATA_PROVIDER; // optional explicit choice: weir | x | mock
-  const provider = forceMock || wanted === "mock" ? "mock" : wanted === "weir" || (!wanted && weirKey) ? "weir" : token ? "x" : "mock";
 
-  if (provider === "mock" || (provider === "weir" && !weirKey) || (provider === "x" && !token)) {
+  // Failover chain, cheapest source first.
+  const chain: ("weir" | "x")[] = [];
+  if (!forceMock && wanted !== "mock") {
+    if (wanted !== "x" && weirKeys.length) chain.push("weir");
+    if (wanted !== "weir" && token) chain.push("x");
+  }
+
+  if (!chain.length) {
     // Simulated network latency so the lightning descent is visible.
     await new Promise((r) => setTimeout(r, 1400 + Math.random() * 600));
     return mockXStats(username);
   }
 
-  if (provider === "weir") {
+  const reasons: string[] = [];
+  for (const provider of chain) {
     try {
-      return await fetchWeirXStats(username, weirKey!);
+      return provider === "weir" ? await fetchWeirXStats(username, weirKeys) : await fetchLiveXStats(username, token!);
     } catch (err) {
-      // A live source is configured but failed → say so. Never show invented numbers as if they were real.
-      console.warn("[x-api] Weir failed:", err instanceof Error ? err.message : err);
-      const why = err instanceof WeirError ? err.message : "the data provider is not responding";
-      throw new XApiError(`X data is temporarily unavailable (${why}). Please try again in a minute.`, 503);
+      console.warn(`[x-api] ${provider} failed:`, err instanceof Error ? err.message : err);
+      // Single live source → surface the precise reason (same wording as before the failover chain).
+      if (chain.length === 1) throw provider === "weir" ? weirErrorForUser(err) : xErrorForUser(err);
+      reasons.push(provider === "weir" ? weirReason(err) : xReason(err));
+      console.warn(`[x-api] falling through to the next data source`);
     }
   }
-  // provider === "x" → official API below
-  if (!token) return mockXStats(username);
 
-  try {
-    return await fetchLiveXStats(username, token!);
-  } catch (err) {
-    if (err instanceof XApiError && err.status !== undefined && [401, 402, 403].includes(err.status)) {
-      console.warn(`[x-api] X rejected the token (HTTP ${err.status}).`);
-      throw new XApiError(
-        err.status === 402
-          ? "X API credits are exhausted. Please try again later."
-          : "X data is temporarily unavailable (the X API rejected the token). Please try again later.",
-        err.status,
-      );
-    }
-    throw err;
+  throw new XApiError(`X data is temporarily unavailable (${reasons.join("; ")}). Please try again in a minute.`, 503);
+}
+
+/** A live source is configured but failed → say so. Never show invented numbers as if they were real. */
+function weirErrorForUser(err: unknown): XApiError {
+  return new XApiError(`X data is temporarily unavailable (${weirReason(err)}). Please try again in a minute.`, 503);
+}
+
+function weirReason(err: unknown): string {
+  return err instanceof WeirError ? err.message : "the data provider is not responding";
+}
+
+function xReason(err: unknown): string {
+  return err instanceof XApiError ? err.message : "the X API is not responding";
+}
+
+/** Friendly, user-facing error for a failed official X API call. */
+function xErrorForUser(err: unknown): Error {
+  if (err instanceof XApiError && err.status !== undefined && [401, 402, 403].includes(err.status)) {
+    return new XApiError(
+      err.status === 402
+        ? "X API credits are exhausted. Please try again later."
+        : "X data is temporarily unavailable (the X API rejected the token). Please try again later.",
+      err.status,
+    );
   }
+  return err instanceof Error ? err : new XApiError("X data is temporarily unavailable. Please try again in a minute.", 503);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -27,6 +27,11 @@ import type { PostMetrics, VibePost, XStats } from "./types";
  *  `Retry-After` (capped) and retry. If Weir still fails the scan reports an honest error — it never
  *  substitutes invented numbers.
  *
+ *  Key failover: `WEIR_API_KEY` accepts comma-separated keys and `WEIR_API_KEYS` adds more (also
+ *  comma-separated). Keys are tried in order; a key that is out of credits (402), invalid (401/403) or
+ *  rate-limited (429) is skipped in favour of the next one, so a second free Weir account keeps the site
+ *  alive when the first runs out. If every key fails, `x-api.ts` falls through to the official X API.
+ *
  *  ⚠️ Third-party service: no SLA, operator not named on their site.
  * ============================================================================
  */
@@ -78,7 +83,55 @@ interface WeirResponse {
 
 const cache = new Map<string, { at: number; value: XStats }>();
 
-export async function fetchWeirXStats(username: string, apiKey: string): Promise<XStats> {
+/**
+ * Weir keys in priority order: `WEIR_API_KEY` first, then `WEIR_API_KEYS`. Both may hold several
+ * comma/space separated keys. Duplicates and blanks are dropped.
+ */
+export function getWeirApiKeys(): string[] {
+  const raw = [process.env.WEIR_API_KEY ?? "", process.env.WEIR_API_KEYS ?? ""]
+    .join(",")
+    .split(/[,\s]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+  return [...new Set(raw)];
+}
+
+/** Statuses that mean "this key is unusable" → try the next key instead of failing the scan. */
+function isKeyFailure(status: number | undefined): boolean {
+  return status === 401 || status === 402 || status === 403 || status === 429;
+}
+
+export async function fetchWeirXStats(username: string, apiKeys: string[]): Promise<XStats> {
+  const keys = [...new Set(apiKeys.map((k) => k.trim()).filter(Boolean))];
+  if (!keys.length) throw new WeirError("Weir API key is not configured", 401);
+
+  const statuses: (number | undefined)[] = [];
+  let last: WeirError | undefined;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      return await fetchWeirXStatsWithKey(username, keys[i]);
+    } catch (err) {
+      const weirErr = err instanceof WeirError ? err : new WeirError("Weir request failed");
+      // Anything that is not key-related (network, 5xx) would hit the next key the same way → give up.
+      if (!isKeyFailure(weirErr.status)) throw weirErr;
+      last = weirErr;
+      statuses.push(weirErr.status);
+      const hasNext = i + 1 < keys.length;
+      console.warn(
+        `[weir] key #${i + 1} unusable (${weirErr.message})${hasNext ? ` → switching to key #${i + 2}` : " → no keys left"}`,
+      );
+    }
+  }
+
+  // Several keys and every one of them reported "out of credits" — say that plainly.
+  const exhausted = statuses.length > 1 && statuses.every((s) => s === 402);
+  throw new WeirError(
+    exhausted ? `Weir credits are exhausted on all ${statuses.length} keys` : (last?.message ?? "Weir API is unavailable"),
+    last?.status,
+  );
+}
+
+async function fetchWeirXStatsWithKey(username: string, apiKey: string): Promise<XStats> {
   const key = username.toLowerCase();
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
@@ -136,7 +189,7 @@ async function searchAll(username: string, apiKey: string, filter: Record<string
     }
 
     const remaining = res.headers.get("x-credits-remaining");
-    if (remaining !== null) console.info(`[weir] credits remaining: ${remaining}`);
+    if (remaining !== null) console.info(`[weir] credits remaining: ${remaining} (key …${apiKey.slice(-4)})`);
 
     const json = (await res.json()) as WeirResponse;
     posts.push(...(json.data ?? []));
