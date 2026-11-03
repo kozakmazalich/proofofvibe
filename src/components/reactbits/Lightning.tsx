@@ -37,6 +37,7 @@ uniform float uSize;
 uniform float uThickness;
 uniform float uGlow;
 uniform float uFlicker;
+uniform float uScroll;
 uniform float uBranches;
 uniform float uXOffset;
 uniform float uAngle;
@@ -151,7 +152,8 @@ vec3 bolt(
   float heat,
   int octaves
 ) {
-  vec2 q = p * uSize + gDrift + offset;
+  // uScroll shifts the bolt's noise field vertically, so the drawn bolt can move with the page (see scrollRef)
+  vec2 q = (p - vec2(0.0, uScroll)) * uSize + gDrift + offset;
   float pin = pinned > 0.5 ? fbm(gDrift + offset, octaves) * WARP : 0.0;
   float warp = warpField(q, p.x - pin, 1.3 * max(1.0, uGlow), octaves) - pin;
   float crackle = heat > 0.001 ? heat * 0.012 * gnoise(q * 9.0 + vec2(41.0, 7.0), PERIOD * 9.0) : 0.0;
@@ -311,6 +313,8 @@ interface LightningProps {
   opacity?: number;
   lightMode?: boolean;
   paused?: boolean;
+  /** Vertical shift of the bolt pattern in CSS px, read every frame (lets the bolt "scroll" inside a fixed canvas). */
+  scrollRef?: { current: number };
   dpr?: number;
   className?: string;
   style?: CSSProperties;
@@ -352,6 +356,7 @@ const UNIFORMS = [
   'uThickness',
   'uGlow',
   'uFlicker',
+  'uScroll',
   'uBranches',
   'uXOffset',
   'uAngle',
@@ -388,6 +393,7 @@ const Lightning = ({
   opacity = 1,
   lightMode = false,
   paused = false,
+  scrollRef,
   dpr,
   className = '',
   style
@@ -415,6 +421,7 @@ const Lightning = ({
     opacity,
     lightMode,
     paused,
+    scrollRef,
     dpr
   };
   const settingsRef = useRef(settings);
@@ -521,6 +528,8 @@ const Lightning = ({
       gl.uniform1f(uniforms.uThickness, Math.max(0, s.thickness));
       gl.uniform1f(uniforms.uGlow, Math.max(0.01, s.glow));
       gl.uniform1f(uniforms.uFlicker, reduced ? 0 : Math.min(1, Math.max(0, s.flicker)));
+      // px → shader units (the shader normalises by the canvas height: 1 CSS px = 2 / height)
+      gl.uniform1f(uniforms.uScroll, ((s.scrollRef?.current ?? 0) * 2) / Math.max(1, view.height));
       gl.uniform1f(uniforms.uBranches, Math.min(1, Math.max(0, s.branches)));
       gl.uniform1f(uniforms.uXOffset, s.xOffset);
       gl.uniform1f(uniforms.uAngle, (s.angle * Math.PI) / 180);

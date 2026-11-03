@@ -51,6 +51,12 @@ const TIP_FEATHER = 70;
 export default function LightningStrike({ phase, onLanded }: LightningStrikeProps) {
   const channelRef = useRef<HTMLDivElement>(null);
   const boltRef = useRef<HTMLDivElement>(null);
+  /**
+   * Shift of the bolt PATTERN inside the canvas (px). It always equals the canvas offset, so while the canvas
+   * slides down to follow the tip, the drawn bolt stays glued to the page and scrolls with it — the bolt keeps
+   * visibly moving however long loading takes. Frozen at landing so the picture does not change.
+   */
+  const patternShift = useRef(0);
   const phaseRef = useRef(phase);
   const onLandedRef = useRef(onLanded);
   const [landed, setLanded] = useState(false);
@@ -68,15 +74,35 @@ export default function LightningStrike({ phase, onLanded }: LightningStrikeProp
     const startY = window.scrollY;
     const channelTop = el.getBoundingClientRect().top + window.scrollY;
 
+    // Auto-scroll stops only when the user DELIBERATELY scrolls. Not on:
+    //  - trackpad / mouse-wheel inertia still coming from the scroll that brought them up to the search bar
+    //    (macOS keeps sending decaying wheel events for ~1–2 s after the fingers leave the trackpad);
+    //  - keys typed into an input (e.g. a space in the username field).
     let userTookOver = false;
-    const takeOver = () => {
-      userTookOver = true;
+    const startedAt = performance.now();
+    const IGNORE_MS = 1200; // inertia window right after "Search"
+    let wheelWindow = 0;
+    let wheelSum = 0;
+    const onWheel = (e: WheelEvent) => {
+      const now = performance.now();
+      if (now - startedAt < IGNORE_MS) return;
+      if (now - wheelWindow > 350) {
+        wheelWindow = now;
+        wheelSum = 0;
+      }
+      wheelSum += Math.abs(e.deltaY);
+      if (wheelSum > 260) userTookOver = true; // a real, intentional scroll gesture
+    };
+    const onTouchMove = () => {
+      if (performance.now() - startedAt > 400) userTookOver = true;
     };
     const onKey = (e: KeyboardEvent) => {
-      if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(e.key)) takeOver();
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(e.key)) userTookOver = true;
     };
-    window.addEventListener("wheel", takeOver, { passive: true });
-    window.addEventListener("touchmove", takeOver, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
     window.addEventListener("keydown", onKey);
 
     let raf = 0;
@@ -115,6 +141,7 @@ export default function LightningStrike({ phase, onLanded }: LightningStrikeProp
           // the bolt and the tip do not move at this instant.
           const y0 = window.scrollY; // read BEFORE shrinking: the browser clamps scrollY as soon as the page gets shorter
           const fOld = canvasOffset(travel, vh);
+          patternShift.current = fOld; // keep exactly the same picture through the collapse
           const excess = travel - minTravel;
           travel = minTravel;
           el.style.height = `${travel}px`;
@@ -130,7 +157,9 @@ export default function LightningStrike({ phase, onLanded }: LightningStrikeProp
       }
 
       el.style.height = `${travel}px`;
-      bolt.style.transform = `translate3d(0, ${landedAt ? 0 : canvasOffset(travel, vh)}px, 0)`;
+      const offset = landedAt ? 0 : canvasOffset(travel, vh);
+      bolt.style.transform = `translate3d(0, ${offset}px, 0)`;
+      if (!landedAt) patternShift.current = offset;
 
       if (!landedAt) {
         // still loading → keep running down; the page scrolls with the tip
@@ -156,8 +185,8 @@ export default function LightningStrike({ phase, onLanded }: LightningStrikeProp
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("wheel", takeOver);
-      window.removeEventListener("touchmove", takeOver);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -213,6 +242,7 @@ export default function LightningStrike({ phase, onLanded }: LightningStrikeProp
               // The shader's own top→bottom "intro" reveal would stack on top of our growing container and keep the
               // start of the bolt dim for the first ~second. The container already reveals it, so it is off.
               intro={false}
+              scrollRef={patternShift}
             />
           </div>
         </div>
