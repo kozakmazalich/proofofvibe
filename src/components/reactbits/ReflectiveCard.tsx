@@ -4,6 +4,18 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties,
 import { HugeiconsIcon } from '@hugeicons/react';
 import { CheckmarkBadge01Icon, FingerPrintIcon } from '@hugeicons/core-free-icons';
 
+// Browsers keep only ~16 live WebGL contexts and silently kill the OLDEST one when the limit is hit (that froze
+// the search bar's electric border after a dozen searches). Deleting GL objects does not free the context, so
+// on a REAL unmount we release it explicitly. React StrictMode (dev) re-runs effects on the same, still
+// connected canvas — so the release is deferred and skipped while the canvas is still in the document.
+const releaseContextOnUnmount = (canvas: HTMLCanvasElement) => {
+  setTimeout(() => {
+    if (canvas.isConnected) return;
+    const gl = canvas.getContext('webgl2');
+    if (gl && !gl.isContextLost()) gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }, 0);
+};
+
 export interface ReflectiveCardProps {
   name?: string;
   role?: string;
@@ -1064,6 +1076,7 @@ const ReflectiveCard = ({
         for (const type of mediaEvents) element.removeEventListener(type, onMedia);
       }
       renderer?.dispose();
+      releaseContextOnUnmount(canvas);
     };
   }, [generation]);
 
