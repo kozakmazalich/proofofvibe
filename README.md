@@ -21,7 +21,7 @@ Shareable links: `/?u=username&w=0xWallet` scans automatically when the page ope
 | Data | Mode switch | Code |
 | --- | --- | --- |
 | X (Twitter) stats | `X_BEARER_TOKEN` set → live Twitter API v2, otherwise mock | `src/lib/x-api.ts` |
-| Battlegrounds rank | `BG_LEADERBOARD_API_URL` set → live, otherwise mock | `src/lib/game-api.ts` |
+| Battlegrounds rank | Always live — the game's public `/api/cup/board` (Season 1, falls back to Preseason) | `src/lib/game-api.ts` |
 | Robinhood testnet activity | Always live — public indexer of testnet.vibevibe.fun (chain 46630), by wallet | `src/lib/testnet-api.ts` |
 | X Score and Testnet Score (each 0–100) | Computed from the data above | `src/lib/score.ts` |
 | Mock data | Seeded by username, so each handle always gets the same report | `src/lib/mock-data.ts` |
@@ -31,8 +31,7 @@ Set `VIBE_DATA_MODE=mock` to force mock data even when keys are present.
 **X API notes:** `search/recent` only covers the last 7 days. For all-time stats, set
 `X_SEARCH_SCOPE=all`, which needs full-archive access on the Pro or Enterprise plan.
 
-Mock leaderboard handles (everyone else shows `—`): `vibevibefun`, `vibevibeeco`,
-`vitalikbuterin`, `elonmusk`, `cz_binance`, `viber`, `jack`, `bohdan`, `degen`.
+
 
 ## Structure
 

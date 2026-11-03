@@ -62,7 +62,7 @@ export default function TestnetSection({ testnet, score }: { testnet: TestnetSta
           <a href={APP} target="_blank" rel="noreferrer" className="text-vibe hover:underline">
             testnet.vibevibe.fun
           </a>
-          . It adds up to <span className="text-vibe">30 points</span> to your Vibe Score.
+          . It gives you a separate <span className="text-vibe">Testnet Score</span> (0–100) on your card.
         </Notice>
       )}
       {testnet.status === "unavailable" && (

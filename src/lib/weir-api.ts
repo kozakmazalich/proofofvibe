@@ -23,8 +23,11 @@ import type { PostMetrics, VibePost, XStats } from "./types";
  *     an account with no mentions only 2 (≈ 60+ free scans / month).
  *   - Results are cached in memory for 10 minutes per username.
  *
- *  ⚠️ Third-party service: no SLA, operator not named on their site. Any failure degrades to demo
- *  data with a visible note instead of breaking the page.
+ *  Rate limit (free tier): 30 requests / minute, and an X search counts as 2. On HTTP 429 / 503 we wait for
+ *  `Retry-After` (capped) and retry. If Weir still fails the scan reports an honest error — it never
+ *  substitutes invented numbers.
+ *
+ *  ⚠️ Third-party service: no SLA, operator not named on their site.
  * ============================================================================
  */
 
@@ -96,19 +99,27 @@ async function searchAll(username: string, apiKey: string, filter: Record<string
   const posts: WeirPost[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES && posts.length < MAX_POSTS; page++) {
-    const res = await fetch(WEIR_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fromUsers: [username],
-        ...filter,
-        sort: "latest",
-        limit: PAGE_SIZE,
-        ...(cursor ? { cursor } : {}),
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+    const body = JSON.stringify({
+      fromUsers: [username],
+      ...filter,
+      sort: "latest",
+      limit: PAGE_SIZE,
+      ...(cursor ? { cursor } : {}),
     });
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(WEIR_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body,
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      });
+      if ((res.status !== 429 && res.status !== 503) || attempt >= 2) break;
+      // Rate-limited: wait what Weir asks for (seconds), at most 12 s, then retry the same request.
+      const wait = Math.min(12, Math.max(1, Number(res.headers.get("retry-after")) || 4));
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
 
     if (!res.ok) {
       const reason =
@@ -180,6 +191,7 @@ function toXStats(username: string, raw: WeirPost[]): XStats {
     // No posts → no author info from Weir; fall back to a public avatar proxy so the card still has a photo.
     avatarUrl: author?.profileImageUrl?.replace("_normal", "_400x400") ?? `https://unavatar.io/x/${encodeURIComponent(username)}`,
     postCount: list.length,
+    activeDays: new Set(list.map((p) => p.createdAt.slice(0, 10))).size,
     totals,
     firstMention: list.at(-1)?.createdAt ?? null,
     lastMention: list[0]?.createdAt ?? null,

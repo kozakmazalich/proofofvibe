@@ -1,107 +1,107 @@
 import "server-only";
-import { mockGameStats } from "./mock-data";
 import type { GameStats } from "./types";
 
 /**
  * ============================================================================
- *  VIBE VIBERS BATTLEGROUNDS (https://bg.vibevibe.fun/) — leaderboard lookup
+ *  VIBE VIBERS BATTLEGROUNDS — https://bg.vibevibe.fun — REAL public leaderboard
  * ============================================================================
+ *  The game exposes its standings as public JSON (the same call its own UI makes):
  *
- *  Right now: MOCK. Only handles from `MOCK_LEADERBOARD` (src/lib/mock-data.ts)
- *  are "found"; everyone else shows "—" in the UI.
+ *    GET /api/cup/board              → current season ("Season 1")
+ *    GET /api/cup/board?season=0     → "Preseason"
+ *    { season, name, of, at, rows: [{ rank, handle, name, avatar, total, wins, seconds, thirds, played, eligible }] }
  *
- *  👉 HOW TO CONNECT THE REAL LEADERBOARD LATER:
+ *  `handle` is the player's X username, `total` their points, `of` the number of players on that board.
  *
- *  Option A — official API (preferred, once it exists):
- *     Set `BG_LEADERBOARD_API_URL` in .env.local, e.g.
- *         BG_LEADERBOARD_API_URL=https://bg.vibevibe.fun/api/leaderboard
- *     and (optionally) `BG_API_KEY`. `fetchLiveGameStats()` expects either
- *         GET {url}?username=<handle>  → { username, points, rank, totalPlayers }
- *     or a full list
- *         GET {url}                   → [{ username, points, rank? }, ...]
- *     Adjust `normalize()` to the real response shape.
+ *  Lookup order: current season first (once it has started and the player has points), then the preseason.
+ *  Nothing here is invented: a handle that is not on a board is "not found" and the UI shows "—".
  *
- *  Option B — no public API: the game frontend almost certainly loads the
- *     leaderboard from some JSON endpoint. Open bg.vibevibe.fun → DevTools →
- *     Network → filter "Fetch/XHR" → open the leaderboard → copy that request URL
- *     into BG_LEADERBOARD_API_URL. (Ask the team for permission / a stable endpoint.)
- *
- *  Option C — scraping HTML: only if the leaderboard is server-rendered.
- *     Fetch the page and parse it with `cheerio`. Fragile — prefer A or B.
- *
- *  Results are cached for 5 minutes via `next: { revalidate: 300 }`.
+ *  Season 1 starts 2026-11-04 15:00 UTC; until then its board is empty and the preseason board is used.
+ *  Both calls are cached for a minute.
  * ============================================================================
  */
 
-export async function getGameStats(username: string): Promise<GameStats> {
-  const url = process.env.BG_LEADERBOARD_API_URL;
-  if (!url || process.env.VIBE_DATA_MODE === "mock") {
-    return mockGameStats(username);
-  }
-  try {
-    return await fetchLiveGameStats(url, username);
-  } catch (err) {
-    // The game block must never break the whole report — degrade to "—".
-    console.error("[game-api] leaderboard lookup failed:", err);
-    return { found: false, points: null, rank: null, totalPlayers: null, source: "live" };
-  }
+const BOARD_URL = process.env.BG_BOARD_URL ?? "https://bg.vibevibe.fun/api/cup/board";
+
+interface BoardRow {
+  rank: number;
+  handle: string;
+  name?: string;
+  total: number;
+  wins?: number;
+  played?: number;
 }
 
-interface LeaderboardEntry {
-  username?: string;
-  twitter?: string;
-  handle?: string;
-  points?: number;
-  score?: number;
-  rank?: number;
+interface Board {
+  season: number;
+  name: string;
+  of: number;
+  rows: BoardRow[];
 }
 
-async function fetchLiveGameStats(baseUrl: string, username: string): Promise<GameStats> {
-  const url = new URL(baseUrl);
-  url.searchParams.set("username", username);
-
+async function fetchBoard(season?: number): Promise<Board> {
+  const url = season === undefined ? BOARD_URL : `${BOARD_URL}?season=${season}`;
   const res = await fetch(url, {
-    headers: process.env.BG_API_KEY ? { Authorization: `Bearer ${process.env.BG_API_KEY}` } : undefined,
-    next: { revalidate: 300 },
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+    next: { revalidate: 60 },
   });
-  if (!res.ok) throw new Error(`Leaderboard responded ${res.status}`);
-  const json: unknown = await res.json();
-  return normalize(json, username);
+  if (!res.ok) throw new Error(`Battlegrounds board responded ${res.status}`);
+  const json = (await res.json()) as Partial<Board>;
+  if (!json || !Array.isArray(json.rows)) throw new Error("Unexpected Battlegrounds board shape");
+  return { season: json.season ?? 0, name: json.name ?? "Season", of: json.of ?? json.rows.length, rows: json.rows };
 }
 
-/** Map whatever the leaderboard returns into GameStats. Tweak to the real schema. */
-function normalize(json: unknown, username: string): GameStats {
-  const handleOf = (e: LeaderboardEntry) => (e.username ?? e.twitter ?? e.handle ?? "").replace(/^@/, "");
-  const pointsOf = (e: LeaderboardEntry) => e.points ?? e.score ?? 0;
+const norm = (h: string) => h.replace(/^@/, "").toLowerCase();
 
-  const list: LeaderboardEntry[] | null = Array.isArray(json)
-    ? json
-    : Array.isArray((json as { data?: unknown })?.data)
-      ? (json as { data: LeaderboardEntry[] }).data
-      : null;
+export async function getGameStats(username: string): Promise<GameStats> {
+  try {
+    const [current, pre] = await Promise.all([fetchBoard(), fetchBoard(0)]);
+    const me = norm(username);
 
-  if (list) {
-    const sorted = [...list].sort((a, b) => pointsOf(b) - pointsOf(a));
-    const idx = sorted.findIndex((e) => handleOf(e).toLowerCase() === username.toLowerCase());
-    if (idx === -1) return { found: false, points: null, rank: null, totalPlayers: list.length, source: "live" };
+    for (const board of [current, pre]) {
+      const row = board.rows.find((r) => norm(r.handle) === me);
+      if (row) {
+        return {
+          found: true,
+          points: row.total,
+          rank: row.rank,
+          totalPlayers: board.of,
+          season: board.name,
+          wins: row.wins ?? null,
+          played: row.played ?? null,
+          source: "live",
+        };
+      }
+    }
+
+    // Not on any board we can see. Say which one is the relevant reference.
+    const ref = current.of > 0 ? current : pre;
+    const truncated = ref.rows.length < ref.of;
     return {
-      found: true,
-      points: pointsOf(sorted[idx]),
-      rank: sorted[idx].rank ?? idx + 1,
-      totalPlayers: list.length,
+      found: false,
+      points: null,
+      rank: null,
+      totalPlayers: ref.of,
+      season: ref.name,
+      wins: null,
+      played: null,
       source: "live",
+      note: truncated ? `Not in the public top ${ref.rows.length} of ${ref.of}` : undefined,
+    };
+  } catch (err) {
+    // Never break the whole report because the game site is down.
+    console.error("[game-api] leaderboard lookup failed:", err);
+    return {
+      found: false,
+      points: null,
+      rank: null,
+      totalPlayers: null,
+      season: null,
+      wins: null,
+      played: null,
+      source: "live",
+      unavailable: true,
     };
   }
-
-  const single = json as LeaderboardEntry & { totalPlayers?: number };
-  if (single && handleOf(single)) {
-    return {
-      found: true,
-      points: pointsOf(single),
-      rank: single.rank ?? null,
-      totalPlayers: single.totalPlayers ?? null,
-      source: "live",
-    };
-  }
-  return { found: false, points: null, rank: null, totalPlayers: null, source: "live" };
 }

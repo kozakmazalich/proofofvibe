@@ -1,11 +1,12 @@
 import { daysBetween, formatDate, timeAgo } from "@/lib/format";
-import type { XStats } from "@/lib/types";
+import { X_SCORE_RULES } from "@/lib/score";
+import type { XScoreParts, XStats } from "@/lib/types";
 import SectionTitle from "./SectionTitle";
 import ScoreChip from "./ScoreChip";
 import StatTile from "./StatTile";
 import { CalendarIcon, EyeIcon, HeartIcon, PostIcon, QuoteIcon, ReplyIcon, RetweetIcon } from "./icons";
 
-export default function XStatsSection({ x, score }: { x: XStats; score: number }) {
+export default function XStatsSection({ x, score, parts }: { x: XStats; score: number; parts: XScoreParts }) {
   const span = daysBetween(x.firstMention, x.lastMention);
   const engagement = x.totals.views > 0 ? (x.totals.likes + x.totals.replies + x.totals.retweets + x.totals.quotes) / x.totals.views : 0;
 
@@ -43,6 +44,56 @@ export default function XStatsSection({ x, score }: { x: XStats; score: number }
           ⚡ Vibing for <span className="text-vibe">{span} days</span> straight-ish.
         </p>
       )}
+
+      {/* How the X Score is made up */}
+      <div className="mt-5 rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.2em] text-white/50">
+          <span>X Score breakdown</span>
+          <span className="text-white">
+            {score}
+            <span className="text-white/40">/100</span>
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {X_SCORE_RULES.map((r) => {
+            const v = parts[r.key];
+            return (
+              <div key={r.key}>
+                <div className="flex items-baseline justify-between font-mono text-[10px] text-white/55">
+                  <span className="uppercase tracking-wider">{r.label}</span>
+                  <span className="text-white">
+                    {v.toFixed(v % 1 === 0 ? 0 : 1)}
+                    <span className="text-white/35">/{r.max}</span>
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full origin-left animate-bar rounded-full bg-vibe shadow-[0_0_8px_#dff904]"
+                    style={{ width: `${Math.min(100, (v / r.max) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <details className="group mt-4 font-mono text-[11px] text-white/50">
+          <summary className="cursor-pointer select-none text-white/60 transition hover:text-vibe">How is it calculated?</summary>
+          <ul className="mt-3 space-y-2 leading-relaxed">
+            {X_SCORE_RULES.map((r) => (
+              <li key={r.key}>
+                <span className="text-white">
+                  {r.label} · {r.max}
+                </span>{" "}
+                — {r.how}. Full marks at <span className="text-vibe">{r.target}</span>.
+              </li>
+            ))}
+            <li className="text-white/40">
+              Counted on your posts that mention @vibevibefun, @vibevibeeco, vibevibe or vibe/vibe (latest ~80). Each part
+              grows with a square-root curve, so the first posts and views count the most.
+            </li>
+          </ul>
+        </details>
+      </div>
     </section>
   );
 }

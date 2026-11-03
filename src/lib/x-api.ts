@@ -55,7 +55,7 @@ export async function getXStats(username: string): Promise<XStats> {
   const provider = forceMock || wanted === "mock" ? "mock" : wanted === "weir" || (!wanted && weirKey) ? "weir" : token ? "x" : "mock";
 
   if (provider === "mock" || (provider === "weir" && !weirKey) || (provider === "x" && !token)) {
-    // Simulated network latency so the "Scanning the vibe..." state is visible.
+    // Simulated network latency so the lightning descent is visible.
     await new Promise((r) => setTimeout(r, 1400 + Math.random() * 600));
     return mockXStats(username);
   }
@@ -64,12 +64,10 @@ export async function getXStats(username: string): Promise<XStats> {
     try {
       return await fetchWeirXStats(username, weirKey!);
     } catch (err) {
-      console.warn("[x-api] Weir failed — falling back to demo data:", err instanceof Error ? err.message : err);
-      await new Promise((r) => setTimeout(r, 800));
-      return {
-        ...mockXStats(username),
-        fallbackReason: err instanceof WeirError ? err.message : "Weir is not responding",
-      };
+      // A live source is configured but failed → say so. Never show invented numbers as if they were real.
+      console.warn("[x-api] Weir failed:", err instanceof Error ? err.message : err);
+      const why = err instanceof WeirError ? err.message : "the data provider is not responding";
+      throw new XApiError(`X data is temporarily unavailable (${why}). Please try again in a minute.`, 503);
     }
   }
   // provider === "x" → official API below
@@ -78,18 +76,14 @@ export async function getXStats(username: string): Promise<XStats> {
   try {
     return await fetchLiveXStats(username, token!);
   } catch (err) {
-    // The token / plan is the problem, not the user's request → keep the site usable with demo data
-    // and say so, instead of failing every search. (404 "user not found" and 429 still surface as errors.)
     if (err instanceof XApiError && err.status !== undefined && [401, 402, 403].includes(err.status)) {
-      console.warn(`[x-api] X rejected the token (HTTP ${err.status}) — falling back to demo data.`);
-      await new Promise((r) => setTimeout(r, 800));
-      return {
-        ...mockXStats(username),
-        fallbackReason:
-          err.status === 402
-            ? "X API credits are exhausted"
-            : "X rejected the API token (the app must belong to a Project with API access)",
-      };
+      console.warn(`[x-api] X rejected the token (HTTP ${err.status}).`);
+      throw new XApiError(
+        err.status === 402
+          ? "X API credits are exhausted. Please try again later."
+          : "X data is temporarily unavailable (the X API rejected the token). Please try again later.",
+        err.status,
+      );
     }
     throw err;
   }
@@ -231,6 +225,7 @@ function toXStats(
     displayName: user.name,
     avatarUrl: user.profile_image_url?.replace("_normal", "_400x400") ?? null,
     postCount: Math.max(totalCount ?? 0, posts.length),
+    activeDays: new Set(posts.map((p) => p.createdAt.slice(0, 10))).size,
     totals,
     firstMention: posts.at(-1)?.createdAt ?? null,
     lastMention: posts[0]?.createdAt ?? null,

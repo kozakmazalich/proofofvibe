@@ -27,14 +27,19 @@ export default function GameStatsSection({ game }: { game: GameStats }) {
 
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/45 p-4 backdrop-blur-md sm:p-5">
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-vibe/10 blur-3xl" />
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="font-display text-sm font-semibold text-white">Vibe Vibers Battlegrounds</span>
+          {game.season && (
+            <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-white/50">
+              {game.season}
+            </span>
+          )}
           <span
             className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider ${
               game.found ? "bg-vibe/15 text-vibe" : "bg-white/5 text-white/40"
             }`}
           >
-            {game.found ? "player found" : "not on leaderboard"}
+            {game.unavailable ? "leaderboard unavailable" : game.found ? "player found" : "not on leaderboard"}
           </span>
         </div>
 
@@ -54,17 +59,24 @@ export default function GameStatsSection({ game }: { game: GameStats }) {
             <div className="mt-2 font-display text-3xl font-bold text-white sm:text-4xl">
               {game.rank === null ? <span className="text-white/40">—</span> : <CountUp value={game.rank} prefix="#" compact={false} />}
             </div>
-            {game.totalPlayers !== null && (
+            {game.totalPlayers !== null && game.totalPlayers > 0 && (
               <div className="mt-1 font-mono text-[10px] text-white/35">of {formatFull(game.totalPlayers)} players</div>
             )}
           </div>
         </div>
 
+        {game.found && game.wins !== null && game.played !== null && (
+          <p className="mt-3 font-mono text-[11px] text-white/45">
+            <span className="text-white">{formatFull(game.wins)}</span> wins in{" "}
+            <span className="text-white">{formatFull(game.played)}</span> matches
+          </p>
+        )}
+
         {percentile !== null ? (
           <div className="mt-4">
             <div className="mb-1.5 flex justify-between font-mono text-[10px] text-white/45">
               <span>Top {percentile < 1 ? percentile.toFixed(2) : percentile.toFixed(1)}%</span>
-              <span>Leaderboard</span>
+              <span>{game.season ?? "Leaderboard"}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
               <div
@@ -75,7 +87,9 @@ export default function GameStatsSection({ game }: { game: GameStats }) {
           </div>
         ) : (
           <p className="mt-4 font-mono text-[11px] text-white/40">
-            No Battlegrounds profile linked to this handle yet.{" "}
+            {game.unavailable
+              ? "The Battlegrounds leaderboard could not be reached right now."
+              : game.note ?? "This handle is not on the Battlegrounds leaderboard yet."}{" "}
             <a href="https://bg.vibevibe.fun/" target="_blank" rel="noreferrer" className="text-vibe hover:underline">
               Enter the arena →
             </a>

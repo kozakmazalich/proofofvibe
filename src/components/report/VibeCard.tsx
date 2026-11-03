@@ -70,7 +70,7 @@ export default function VibeCard({ report }: { report: VibeReport }) {
           <CountUp value={scores.x} compact={false} />
           <Small>/100</Small>
         </ScoreTile>
-        <ScoreTile label="Game rank" compact={showTestnet}>
+        <ScoreTile label={game.found && game.season && /pre/i.test(game.season) ? "Rank · pre" : "Game rank"} compact={showTestnet}>
           {game.rank ? <CountUp value={game.rank} compact={game.rank >= 1000} prefix="#" /> : <span className="opacity-50">—</span>}
         </ScoreTile>
         {showTestnet && (

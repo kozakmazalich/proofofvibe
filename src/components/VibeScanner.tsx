@@ -103,10 +103,8 @@ export default function VibeScanner() {
 
         {/* min-height reserves the landing spot so the page can scroll down with the bolt */}
         <div className={`relative ${state.phase !== "idle" ? "min-h-[max(520px,100dvh)]" : ""}`} aria-busy={loading}>
-          {/* One persistent element for loading AND success → the reveal is never interrupted or replayed */}
-          {landed && (state.phase === "loading" || state.phase === "success") && (
-            <ReportCard key={strikeId} report={state.phase === "success" ? state.report : null} />
-          )}
+          {/* Nothing is shown while loading — the lightning keeps running down until all data is in */}
+          {landed && state.phase === "success" && <ReportCard key={strikeId} report={state.report} />}
           {landed && state.phase === "error" && (
             <div className="mx-auto max-w-md">
               <ErrorState message={state.message} onRetry={() => search(state.username, state.wallet)} />

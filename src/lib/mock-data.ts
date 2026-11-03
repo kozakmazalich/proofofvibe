@@ -1,4 +1,4 @@
-import type { GameStats, PostMetrics, VibePost, XStats } from "./types";
+import type { PostMetrics, VibePost, XStats } from "./types";
 
 /**
  * MOCK DATA
@@ -104,43 +104,11 @@ export function mockXStats(username: string): XStats {
     displayName: `${username}${DISPLAY_SUFFIXES[Math.floor(rand() * DISPLAY_SUFFIXES.length)]}`,
     avatarUrl: `https://unavatar.io/x/${encodeURIComponent(username)}`,
     postCount,
+    activeDays: Math.min(postCount, 5 + Math.floor(rand() * 22)),
     totals,
     firstMention: new Date(firstMention).toISOString(),
     lastMention: new Date(lastMention).toISOString(),
     recentPosts,
-    source: "mock",
-  };
-}
-
-/**
- * Mock Battlegrounds leaderboard. Only these handles are "found";
- * anyone else gets "—" in the UI. Try searching e.g. `vibevibefun`.
- */
-export const MOCK_LEADERBOARD: { username: string; points: number }[] = [
-  { username: "vibevibefun", points: 98_420 },
-  { username: "vibevibeeco", points: 91_337 },
-  { username: "elonmusk", points: 42_069 },
-  { username: "vitalikbuterin", points: 77_310 },
-  { username: "cz_binance", points: 63_880 },
-  { username: "viber", points: 51_204 },
-  { username: "jack", points: 12_450 },
-  { username: "bohdan", points: 70_777 },
-  { username: "degen", points: 33_210 },
-];
-
-const MOCK_TOTAL_PLAYERS = 12_847;
-
-export function mockGameStats(username: string): GameStats {
-  const sorted = [...MOCK_LEADERBOARD].sort((a, b) => b.points - a.points);
-  const idx = sorted.findIndex((p) => p.username.toLowerCase() === username.toLowerCase());
-  if (idx === -1) {
-    return { found: false, points: null, rank: null, totalPlayers: MOCK_TOTAL_PLAYERS, source: "mock" };
-  }
-  return {
-    found: true,
-    points: sorted[idx].points,
-    rank: idx + 1,
-    totalPlayers: MOCK_TOTAL_PLAYERS,
     source: "mock",
   };
 }

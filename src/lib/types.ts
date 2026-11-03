@@ -26,6 +26,8 @@ export interface XStats {
   firstMention: string | null; // ISO 8601
   lastMention: string | null; // ISO 8601
   recentPosts: VibePost[];
+  /** Distinct calendar days (UTC) on which the user posted about vibe/vibe, within the fetched sample. */
+  activeDays?: number;
   source: DataSource;
   /** Set when live data was requested but X refused (bad token / no API access) and demo data is shown instead. */
   fallbackReason?: string;
@@ -36,7 +38,14 @@ export interface GameStats {
   points: number | null;
   rank: number | null;
   totalPlayers: number | null;
+  /** Which board the numbers come from: "Season 1" or "Preseason". */
+  season: string | null;
+  wins: number | null;
+  played: number | null;
   source: DataSource;
+  /** The game's leaderboard could not be reached right now. */
+  unavailable?: boolean;
+  note?: string;
 }
 
 export interface TestnetActivity {
@@ -72,9 +81,18 @@ export interface TestnetStats {
   error?: string;
 }
 
+/** The four building blocks of the X Score (each has its own maximum, they add up to 100). */
+export interface XScoreParts {
+  activity: number; // max 20
+  reach: number; // max 35
+  engagement: number; // max 35
+  resonance: number; // max 10
+}
+
 export interface VibeScores {
   /** X activity score, 0..100. */
   x: number;
+  xParts: XScoreParts;
   /** Robinhood testnet score, 0..100 — null when no wallet was entered or data is unavailable. */
   testnet: number | null;
 }
