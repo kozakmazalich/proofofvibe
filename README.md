@@ -20,7 +20,7 @@ Shareable links: `/?u=username&w=0xWallet` scans automatically when the page ope
 
 | Data | Mode switch | Code |
 | --- | --- | --- |
-| X (Twitter) stats | `X_BEARER_TOKEN` set → live Twitter API v2, otherwise mock | `src/lib/x-api.ts` |
+| X (Twitter) stats | `WEIR_API_KEY` / `WEIR_API_KEYS` set → live data via Weir, otherwise mock | `src/lib/x-api.ts`, `src/lib/weir-api.ts` |
 | Battlegrounds rank | Always live — the game's public `/api/cup/board` (Season 1, falls back to Preseason) | `src/lib/game-api.ts` |
 | Robinhood testnet activity | Always live — public indexer of testnet.vibevibe.fun (chain 46630), by wallet | `src/lib/testnet-api.ts` |
 | X Score and Testnet Score (each 0–100) | Computed from the data above | `src/lib/score.ts` |
@@ -28,8 +28,10 @@ Shareable links: `/?u=username&w=0xWallet` scans automatically when the page ope
 
 Set `VIBE_DATA_MODE=mock` to force mock data even when keys are present.
 
-**X API notes:** `search/recent` only covers the last 7 days. For all-time stats, set
-`X_SEARCH_SCOPE=all`, which needs full-archive access on the Pro or Enterprise plan.
+**Weir notes:** free accounts get 5 000 credits a month (1 per call + 1 per post returned).
+`WEIR_API_KEY` and `WEIR_API_KEYS` accept comma-separated lists; when a key is out of credits,
+rejected or rate-limited the next one is used automatically, so a second free account keeps the
+site live. Keeping `WEIR_MAX_POSTS` low is the main lever on credit spend.
 
 
 
@@ -49,6 +51,6 @@ src/components/reactbits/*    original React Bits sources (from the reactbits.de
 
 ```bash
 vercel                       # preview
-vercel env add X_BEARER_TOKEN
+vercel env add WEIR_API_KEY  # plus WEIR_API_KEYS for failover
 vercel --prod
 ```
